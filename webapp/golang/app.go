@@ -87,6 +87,7 @@ func dbInitialize() {
 		"UPDATE users SET del_flg = 1 WHERE id % 50 = 0",
 
 		"ALTER table comments add index post_id_index (post_id)",
+		"ALTER TABLE posts ADD INDEX idx_posts_created_at (created_at DESC)",
 	}
 
 	for _, sql := range sqls {
@@ -390,7 +391,7 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 
 	results := []Post{}
 
-	err := db.Select(&results, "SELECT `id`, `user_id`, `body`, `mime`, `created_at` FROM `posts` ORDER BY `created_at` DESC")
+	err := db.Select(&results, "SELECT `id`, `user_id`, `body`, `mime`, `created_at` FROM `posts` FORCE INDEX (`idx_posts_created_at`) ORDER BY `created_at` DESC")
 	if err != nil {
 		log.Print(err)
 		return
