@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	crand "crypto/rand"
+	"encoding/gob"
 	"fmt"
 	"html/template"
 	"io"
@@ -29,6 +31,7 @@ var (
 	db       *sqlx.DB
 	store    *gsm.MemcacheStore
 	profiler interface{ Stop() }
+	mc       *memcache.Client
 )
 
 const (
@@ -68,6 +71,41 @@ type Comment struct {
 	User      User
 }
 
+// 構造体をMemcacheにセットする関数
+func setStructToMemcache(mc *memcache.Client, key string, value interface{}) error {
+	// 構造体をバイナリデータにシリアライズ
+	var buffer bytes.Buffer
+	encoder := gob.NewEncoder(&buffer)
+	err := encoder.Encode(value)
+	if err != nil {
+		return err
+	}
+
+	// Memcacheにセット
+	item := &memcache.Item{
+		Key:        key,
+		Value:      buffer.Bytes(),
+		Expiration: 5,
+	}
+	return mc.Set(item)
+}
+
+// Memcacheから構造体を取得する関数
+func getStructFromMemcache(mc *memcache.Client, key string, v interface{}) error {
+	item, err := mc.Get(key)
+	if err != nil {
+		return err
+	}
+
+	// バイナリデータを指定された構造体にデシリアライズ
+	buffer := bytes.NewBuffer(item.Value)
+	decoder := gob.NewDecoder(buffer)
+	if err := decoder.Decode(v); err != nil {
+		return err
+	}
+	return nil
+}
+
 func init() {
 	memdAddr := os.Getenv("ISUCONP_MEMCACHED_ADDRESS")
 	if memdAddr == "" {
@@ -76,6 +114,7 @@ func init() {
 	memcacheClient := memcache.New(memdAddr)
 	store = gsm.NewMemcacheStore(memcacheClient, "iscogram_", []byte("sendagaya"))
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+	mc = memcache.New(memdAddr)
 }
 
 func dbInitialize() {
@@ -87,7 +126,6 @@ func dbInitialize() {
 		"UPDATE users SET del_flg = 1 WHERE id % 50 = 0",
 
 		"ALTER table comments add index post_id_index (post_id)",
-		"ALTER TABLE posts ADD INDEX idx_posts_created_at (created_at DESC)",
 	}
 
 	for _, sql := range sqls {
@@ -391,10 +429,14 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 
 	results := []Post{}
 
-	err := db.Select(&results, "SELECT `id`, `user_id`, `body`, `mime`, `created_at` FROM `posts` FORCE INDEX (`idx_posts_created_at`) ORDER BY `created_at` DESC")
-	if err != nil {
-		log.Print(err)
-		return
+	mcErr := getStructFromMemcache(mc, "getIndex", &results)
+	if mcErr != nil {
+		err := db.Select(&results, "SELECT `id`, `user_id`, `body`, `mime`, `created_at` FROM `posts` ORDER BY `created_at` DESC")
+		if err != nil {
+			log.Print(err)
+			return
+		}
+		setStructToMemcache(mc, "getIndex", results)
 	}
 
 	posts, err := makePosts(results, getCSRFToken(r), false)
