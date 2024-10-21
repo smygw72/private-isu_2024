@@ -726,10 +726,16 @@ func getImage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	post := Post{}
-	err = db.Get(&post, "SELECT * FROM `posts` WHERE `id` = ?", pid)
+	err = db.Get(&post, "SELECT * FROM `posts` WHERE `id` = ? LIMIT 1", pid)
 	if err != nil {
 		log.Print(err)
 		return
+	}
+
+	filepath := "../public/" + imageURL(post)
+	err = os.WriteFile(filepath, post.Imgdata, 0644)
+	if err != nil {
+		log.Print(err)
 	}
 
 	ext := r.PathValue("ext")
