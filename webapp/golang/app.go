@@ -480,11 +480,23 @@ func getAccountName(w http.ResponseWriter, r *http.Request) {
 
 	results := []Post{}
 
-	err = db.Select(&results, "SELECT `id`, `user_id`, `body`, `mime`, `created_at` FROM `posts` WHERE `user_id` = ? ORDER BY `created_at` DESC", user.ID)
+	// posts table と comments table の JOIN でコメントした数を取得する
+	err = db.Select(
+		&results,
+		"SELECT `posts`.`id` FROM `posts` JOIN `comments` ON `posts`.`id` = `comments`.`post_id` WHERE `comments`.`user_id` = ?",
+		user.ID,
+	)
 	if err != nil {
 		log.Print(err)
 		return
 	}
+	commentCount := len(results)
+
+	// err = db.Select(&results, "SELECT `id`, `user_id`, `body`, `mime`, `created_at` FROM `posts` WHERE `user_id` = ? ORDER BY `created_at` DESC", user.ID)
+	// if err != nil {
+	// 	log.Print(err)
+	// 	return
+	// }
 
 	posts, err := makePosts(results, getCSRFToken(r), false)
 	if err != nil {
@@ -492,12 +504,12 @@ func getAccountName(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	commentCount := 0
-	err = db.Get(&commentCount, "SELECT COUNT(*) AS count FROM `comments` WHERE `user_id` = ?", user.ID)
-	if err != nil {
-		log.Print(err)
-		return
-	}
+	// commentCount := 0
+	// err = db.Get(&commentCount, "SELECT COUNT(*) AS count FROM `comments` WHERE `user_id` = ?", user.ID)
+	// if err != nil {
+	// 	log.Print(err)
+	// 	return
+	// }
 
 	postIDs := []int{}
 	err = db.Select(&postIDs, "SELECT `id` FROM `posts` WHERE `user_id` = ?", user.ID)
