@@ -732,7 +732,11 @@ func getImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filepath := "../public/" + imageURL(post)
+	filepath := "../public" + imageURL(post)
+	// make ../public/image directory if not exists
+	if _, err := os.Stat(filepath); os.IsNotExist(err) {
+		os.MkdirAll("../public/image", 0755)
+	}
 	err = os.WriteFile(filepath, post.Imgdata, 0644)
 	if err != nil {
 		log.Print(err)
