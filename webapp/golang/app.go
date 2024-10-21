@@ -126,6 +126,7 @@ func dbInitialize() {
 		"UPDATE users SET del_flg = 1 WHERE id % 50 = 0",
 
 		"ALTER TABLE `comments` ADD INDEX `post_id_index` (post_id)",
+		"ALTER TABLE `comments` ADD INDEX `user_id_index` (user_id)",
 		"ALTER TABLE `posts` ADD INDEX `idx_posts_created_at_desc` (`created_at` DESC)",
 	}
 
@@ -480,23 +481,11 @@ func getAccountName(w http.ResponseWriter, r *http.Request) {
 
 	results := []Post{}
 
-	// posts table と comments table の JOIN でコメントした数を取得する
-	err = db.Select(
-		&results,
-		"SELECT `posts`.`id` FROM `posts` JOIN `comments` ON `posts`.`id` = `comments`.`post_id` WHERE `comments`.`user_id` = ?",
-		user.ID,
-	)
+	err = db.Select(&results, "SELECT `id`, `user_id`, `body`, `mime`, `created_at` FROM `posts` WHERE `user_id` = ? ORDER BY `created_at` DESC", user.ID)
 	if err != nil {
 		log.Print(err)
 		return
 	}
-	commentCount := len(results)
-
-	// err = db.Select(&results, "SELECT `id`, `user_id`, `body`, `mime`, `created_at` FROM `posts` WHERE `user_id` = ? ORDER BY `created_at` DESC", user.ID)
-	// if err != nil {
-	// 	log.Print(err)
-	// 	return
-	// }
 
 	posts, err := makePosts(results, getCSRFToken(r), false)
 	if err != nil {
@@ -504,12 +493,12 @@ func getAccountName(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// commentCount := 0
-	// err = db.Get(&commentCount, "SELECT COUNT(*) AS count FROM `comments` WHERE `user_id` = ?", user.ID)
-	// if err != nil {
-	// 	log.Print(err)
-	// 	return
-	// }
+	commentCount := 0
+	err = db.Get(&commentCount, "SELECT COUNT(*) AS count FROM `comments` WHERE `user_id` = ?", user.ID)
+	if err != nil {
+		log.Print(err)
+		return
+	}
 
 	postIDs := []int{}
 	err = db.Select(&postIDs, "SELECT `id` FROM `posts` WHERE `user_id` = ?", user.ID)
