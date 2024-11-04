@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	crand "crypto/rand"
+	"crypto/sha512"
 	"encoding/gob"
 	"fmt"
 	"html/template"
@@ -11,7 +12,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path"
 	"regexp"
 	"strconv"
@@ -163,17 +163,17 @@ func escapeshellarg(arg string) string {
 
 func digest(src string) string {
 	// opensslを使わないでsha512を計算する
-	out, err := exec.Command("/bin/bash", "-c", `printf "%s" `+escapeshellarg(src)+` | sha512sum | awk '{print $1}'`).Output()
+	return fmt.Sprintf("%x", sha512.Sum512([]byte(src)))
 
 	// opensslのバージョンによっては (stdin)= というのがつくので取る
 	// out, err := exec.Command("/bin/bash", "-c", `printf "%s" `+escapeshellarg(src)+` | openssl dgst -sha512 | sed 's/^.*= //'`).Output()
 
-	if err != nil {
-		log.Print(err)
-		return ""
-	}
+	// if err != nil {
+	// 	log.Print(err)
+	// 	return ""
+	// }
 
-	return strings.TrimSuffix(string(out), "\n")
+	// return strings.TrimSuffix(string(out), "\n")
 }
 
 func calculateSalt(accountName string) string {
@@ -252,20 +252,8 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 		}
 
 		p.Comments = comments
-
-		err = db.Get(&p.User, "SELECT * FROM `users` WHERE `id` = ?", p.UserID)
-		if err != nil {
-			return nil, err
-		}
-
 		p.CSRFToken = csrfToken
-
-		if p.User.DelFlg == 0 {
-			posts = append(posts, p)
-		}
-		if len(posts) >= postsPerPage {
-			break
-		}
+		posts = append(posts, p)
 	}
 
 	return posts, nil
@@ -433,7 +421,6 @@ func getLogout(w http.ResponseWriter, r *http.Request) {
 func getIndex(w http.ResponseWriter, r *http.Request) {
 	me := getSessionUser(r)
 
-	posts := []Post{}
 	results := []Post{}
 
 	// Post table と User table をjoinしてdelflagが0のものだけを20件取得する
@@ -445,44 +432,10 @@ u.del_flg AS "user.del_flg", u.created_at AS "user.created_at"
  FROM posts AS p JOIN users as u ON p.user_id = u.id
  WHERE u.del_flg = 0 ORDER BY p.created_at DESC LIMIT ?
 `
-	err := db.Select(&posts, query, postsPerPage)
+	err := db.Select(&results, query, postsPerPage)
 	if err != nil {
 		log.Print(err)
 		return
-	}
-	csfrToken := getCSRFToken(r)
-
-	for _, p := range results {
-		err := db.Get(&p.CommentCount, "SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?", p.ID)
-		if err != nil {
-			log.Print(err)
-			return
-		}
-
-		query := "SELECT * FROM `comments` WHERE `post_id` = ? ORDER BY `created_at` DESC LIMIT 3"
-		var comments []Comment
-		err = db.Select(&comments, query, p.ID)
-		if err != nil {
-			log.Print(err)
-			return
-		}
-
-		for i := 0; i < len(comments); i++ {
-			err := db.Get(&comments[i].User, "SELECT * FROM `users` WHERE `id` = ?", comments[i].UserID)
-			if err != nil {
-				log.Print(err)
-				return
-			}
-		}
-
-		// reverse
-		for i, j := 0, len(comments)-1; i < j; i, j = i+1, j-1 {
-			comments[i], comments[j] = comments[j], comments[i]
-		}
-
-		p.Comments = comments
-		p.CSRFToken = csfrToken
-		posts = append(posts, p)
 	}
 
 	// err := db.Select(&results, "SELECT `id`, `user_id`, `body`, `mime`, `created_at` FROM `posts` ORDER BY `created_at` DESC")
@@ -492,10 +445,12 @@ u.del_flg AS "user.del_flg", u.created_at AS "user.created_at"
 	// }
 
 	// posts, err := makePosts(results, getCSRFToken(r), false)
-	// if err != nil {
-	// 	log.Print(err)
-	// 	return
-	// }
+
+	posts, err := makePosts(results, getCSRFToken(r), false)
+	if err != nil {
+		log.Print(err)
+		return
+	}
 
 	fmap := template.FuncMap{
 		"imageURL": imageURL,
@@ -626,46 +581,12 @@ u.del_flg AS "user.del_flg", u.created_at AS "user.created_at"
  FROM posts AS p JOIN users as u ON p.user_id = u.id
  WHERE p.created_at <= ? ORDER BY p.created_at DESC LIMIT ?
 `
-	posts := []Post{}
+
 	results := []Post{}
 	err = db.Select(&results, query, t.Format(ISO8601Format), postsPerPage)
 	if err != nil {
 		log.Print(err)
 		return
-	}
-
-	csrfToken := getCSRFToken(r)
-	for _, p := range results {
-		err := db.Get(&p.CommentCount, "SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?", p.ID)
-		if err != nil {
-			log.Print(err)
-			return
-		}
-
-		query := "SELECT * FROM `comments` WHERE `post_id` = ? ORDER BY `created_at` DESC LIMIT 3"
-		var comments []Comment
-		err = db.Select(&comments, query, p.ID)
-		if err != nil {
-			log.Print(err)
-			return
-		}
-
-		for i := 0; i < len(comments); i++ {
-			err := db.Get(&comments[i].User, "SELECT * FROM `users` WHERE `id` = ?", comments[i].UserID)
-			if err != nil {
-				log.Print(err)
-				return
-			}
-		}
-
-		// reverse
-		for i, j := 0, len(comments)-1; i < j; i, j = i+1, j-1 {
-			comments[i], comments[j] = comments[j], comments[i]
-		}
-
-		p.Comments = comments
-		p.CSRFToken = csrfToken
-		posts = append(posts, p)
 	}
 
 	// err = db.Select(&results, "SELECT `id`, `user_id`, `body`, `mime`, `created_at` FROM `posts` WHERE `created_at` <= ? ORDER BY `created_at` DESC", t.Format(ISO8601Format))
@@ -675,10 +596,13 @@ u.del_flg AS "user.del_flg", u.created_at AS "user.created_at"
 	// }
 
 	// posts, err := makePosts(results, getCSRFToken(r), false)
-	// if err != nil {
-	// 	log.Print(err)
-	// 	return
-	// }
+
+	posts, err := makePosts(results, getCSRFToken(r), false)
+
+	if err != nil {
+		log.Print(err)
+		return
+	}
 
 	if len(posts) == 0 {
 		w.WriteHeader(http.StatusNotFound)
