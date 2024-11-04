@@ -430,8 +430,9 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 	me := getSessionUser(r)
 
 	posts := []Post{}
+	results := []Post{}
 
-	// Post tableと User table をjoinしてdelflagが0のものだけを20件取得する
+	// Post table と User table をjoinしてdelflagが0のものだけを20件取得する
 	query := "SELECT p.id, p.user_id, p.body, p.mime, p.created_at, u.id, u.account_name, u.passhash, u.authority, u.del_flg, u.created_at " +
 		"FROM `posts` as p JOIN `users` as u ON p.user_id = u.id " +
 		"WHERE u.del_flg = 0 ORDER BY p.created_at DESC LIMIT ?"
@@ -440,7 +441,9 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 		log.Print(err)
 		return
 	}
-	for i, p := range posts {
+	csfrToken := getCSRFToken(r)
+
+	for _, p := range results {
 		err := db.Get(&p.CommentCount, "SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?", p.ID)
 		if err != nil {
 			log.Print(err)
@@ -468,9 +471,9 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 			comments[i], comments[j] = comments[j], comments[i]
 		}
 
-		posts[i].Comments = comments
-
-		posts[i].CSRFToken = getCSRFToken(r)
+		p.Comments = comments
+		p.CSRFToken = csfrToken
+		posts = append(posts, p)
 	}
 
 	// err := db.Select(&results, "SELECT `id`, `user_id`, `body`, `mime`, `created_at` FROM `posts` ORDER BY `created_at` DESC")
