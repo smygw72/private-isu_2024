@@ -614,12 +614,61 @@ func getPosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	query := `
+SELECT p.id, p.user_id, p.body, p.mime, p.created_at,
+u.id AS "user.id", u.account_name AS "user.account_name",
+u.passhash AS "user.passhash", u.authority AS "user.authority",
+u.del_flg AS "user.del_flg", u.created_at AS "user.created_at"
+ FROM posts AS p JOIN users as u ON p.user_id = u.id
+ WHERE p.created_at <= ? ORDER BY p.created_at DESC LIMIT ?
+`
+	posts := []Post{}
 	results := []Post{}
-	err = db.Select(&results, "SELECT `id`, `user_id`, `body`, `mime`, `created_at` FROM `posts` WHERE `created_at` <= ? ORDER BY `created_at` DESC", t.Format(ISO8601Format))
+	err = db.Select(&results, query, t.Format(ISO8601Format), postsPerPage)
 	if err != nil {
 		log.Print(err)
 		return
 	}
+
+	csrfToken := getCSRFToken(r)
+	for _, p := range results {
+		err := db.Get(&p.CommentCount, "SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?", p.ID)
+		if err != nil {
+			log.Print(err)
+			return
+		}
+
+		query := "SELECT * FROM `comments` WHERE `post_id` = ? ORDER BY `created_at` DESC LIMIT 3"
+		var comments []Comment
+		err = db.Select(&comments, query, p.ID)
+		if err != nil {
+			log.Print(err)
+			return
+		}
+
+		for i := 0; i < len(comments); i++ {
+			err := db.Get(&comments[i].User, "SELECT * FROM `users` WHERE `id` = ?", comments[i].UserID)
+			if err != nil {
+				log.Print(err)
+				return
+			}
+		}
+
+		// reverse
+		for i, j := 0, len(comments)-1; i < j; i, j = i+1, j-1 {
+			comments[i], comments[j] = comments[j], comments[i]
+		}
+
+		p.Comments = comments
+		p.CSRFToken = csrfToken
+		posts = append(posts, p)
+	}
+
+	// err = db.Select(&results, "SELECT `id`, `user_id`, `body`, `mime`, `created_at` FROM `posts` WHERE `created_at` <= ? ORDER BY `created_at` DESC", t.Format(ISO8601Format))
+	// if err != nil {
+	// 	log.Print(err)
+	// 	return
+	// }
 
 	posts, err := makePosts(results, getCSRFToken(r), false)
 	if err != nil {
