@@ -433,12 +433,12 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 	results := []Post{}
 
 	// Post table と User table をjoinしてdelflagが0のものだけを20件取得する
-	query := `SELECT p.id, p.user_id, p.body, p.mime, p.created_at
-"u.id AS user.id, u.account_name AS user.account_name,
- u.passhash as user.passhash, u.authority as user.authority,
- u.del_flg as user.del_flg, u.created_at AS user.created_at
- FROM posts as p JOIN users as u ON p.user_id = u.id
- WHERE u.del_flg = 0 ORDER BY p.created_at DESC LIMIT ?`
+	query := `SELECT p.id, p.user_id, p.body, p.mime, p.created_at,
+			u.id AS user.id, u.account_name AS user.account_name,
+			u.passhash AS user.passhash, u.authority AS user.authority,
+			u.del_flg as user.del_flg, u.created_at AS user.created_at
+			FROM posts as p JOIN users as u ON p.user_id = u.id
+			WHERE u.del_flg = 0 ORDER BY p.created_at DESC LIMIT ?`
 	err := db.Select(&posts, query, postsPerPage)
 	if err != nil {
 		log.Print(err)
