@@ -815,6 +815,24 @@ func postIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ext := ""
+	if mime == "image/jpeg" {
+		ext = ".jpg"
+	} else if mime == "image/png" {
+		ext = ".png"
+	} else if mime == "image/gif" {
+		ext = ".gif"
+	}
+	filepath := "../public/image/" + strconv.FormatInt(pid, 10) + ext
+	// make ../public/image directory if not exists
+	if _, err := os.Stat(filepath); os.IsNotExist(err) {
+		os.MkdirAll("../public/image", 0755)
+	}
+	err = os.WriteFile(filepath, filedata, 0644)
+	if err != nil {
+		log.Print(err)
+	}
+
 	http.Redirect(w, r, "/posts/"+strconv.FormatInt(pid, 10), http.StatusFound)
 }
 
