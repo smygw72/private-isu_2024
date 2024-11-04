@@ -157,9 +157,9 @@ func validateUser(accountName, password string) bool {
 // 今回のGo実装では言語側のエスケープの仕組みが使えないのでOSコマンドインジェクション対策できない
 // 取り急ぎPHPのescapeshellarg関数を参考に自前で実装
 // cf: http://jp2.php.net/manual/ja/function.escapeshellarg.php
-func escapeshellarg(arg string) string {
-	return "'" + strings.Replace(arg, "'", "'\\''", -1) + "'"
-}
+// func escapeshellarg(arg string) string {
+// 	return "'" + strings.Replace(arg, "'", "'\\''", -1) + "'"
+// }
 
 func digest(src string) string {
 	// opensslを使わないでsha512を計算する
@@ -199,9 +199,14 @@ func getSessionUser(r *http.Request) User {
 
 	u := User{}
 
-	err := db.Get(&u, "SELECT * FROM `users` WHERE `id` = ?", uid)
-	if err != nil {
-		return User{}
+	key := "User.id." + strconv.Itoa(uid.(int))
+	mcErr := getStructFromMemcache(mc, key, &u)
+	if mcErr != nil {
+		err := db.Get(&u, "SELECT * FROM `users` WHERE `id` = ?", uid)
+		if err != nil {
+			return User{}
+		}
+		setStructToMemcache(mc, key, u)
 	}
 
 	return u
