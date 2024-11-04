@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	crand "crypto/rand"
-	"database/sql"
 	"encoding/gob"
 	"fmt"
 	"html/template"
@@ -802,7 +801,7 @@ func postIndex(w http.ResponseWriter, r *http.Request) {
 		query,
 		me.ID,
 		mime,
-		sql.NullByte{},
+		[]byte(""),
 		r.FormValue("body"),
 	)
 	if err != nil {
