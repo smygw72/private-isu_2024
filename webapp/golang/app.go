@@ -439,7 +439,7 @@ u.id AS "user.id", u.account_name AS "user.account_name",
 u.passhash AS "user.passhash", u.authority AS "user.authority",
 u.del_flg AS "user.del_flg", u.created_at AS "user.created_at"
  FROM posts AS p JOIN users as u ON p.user_id = u.id
- WHERE u.del_flg = 0 ORDER BY p.created_at DESC LIMIT 20
+ WHERE u.del_flg = 0 ORDER BY p.created_at DESC LIMIT ?
 `
 	err := db.Select(&posts, query, postsPerPage)
 	if err != nil {
