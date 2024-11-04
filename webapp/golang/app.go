@@ -224,25 +224,40 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 	var posts []Post
 
 	for _, p := range results {
-		err := db.Get(&p.CommentCount, "SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?", p.ID)
-		if err != nil {
-			return nil, err
+		key := "Count.comment.post.id." + strconv.Itoa(p.ID)
+		mcErr := getStructFromMemcache(mc, key, &p.CommentCount)
+		if mcErr != nil {
+			err := db.Get(&p.CommentCount, "SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?", p.ID)
+			if err != nil {
+				return nil, err
+			}
+			setStructToMemcache(mc, key, p.CommentCount)
 		}
 
-		query := "SELECT * FROM `comments` WHERE `post_id` = ? ORDER BY `created_at` DESC"
-		if !allComments {
-			query += " LIMIT 3"
-		}
 		var comments []Comment
-		err = db.Select(&comments, query, p.ID)
-		if err != nil {
-			return nil, err
+		key = "Comments.post.id." + strconv.Itoa(p.ID)
+		if !allComments {
+			key += ".3"
+		}
+
+		mcErr = getStructFromMemcache(mc, key, &p.Comments)
+		if mcErr != nil {
+			err := db.Select(&comments, "SELECT * FROM `comments` WHERE `post_id` = ? ORDER BY `created_at` DESC", p.ID)
+			if err != nil {
+				return nil, err
+			}
+			setStructToMemcache(mc, key, comments)
 		}
 
 		for i := 0; i < len(comments); i++ {
-			err := db.Get(&comments[i].User, "SELECT * FROM `users` WHERE `id` = ?", comments[i].UserID)
-			if err != nil {
-				return nil, err
+			key = "User.id." + strconv.Itoa(comments[i].UserID)
+			mcErr = getStructFromMemcache(mc, key, &comments[i].User)
+			if mcErr != nil {
+				err := db.Get(&comments[i].User, "SELECT * FROM `users` WHERE `id` = ?", comments[i].UserID)
+				if err != nil {
+					return nil, err
+				}
+				setStructToMemcache(mc, key, comments[i].User)
 			}
 		}
 
