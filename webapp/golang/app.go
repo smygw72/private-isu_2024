@@ -58,7 +58,7 @@ type Post struct {
 	CreatedAt    time.Time `db:"created_at"`
 	CommentCount int
 	Comments     []Comment
-	User         User
+	User         User `db:"user"`
 	CSRFToken    string
 }
 
@@ -429,23 +429,69 @@ func getLogout(w http.ResponseWriter, r *http.Request) {
 func getIndex(w http.ResponseWriter, r *http.Request) {
 	me := getSessionUser(r)
 
+	posts := []Post{}
 	results := []Post{}
 
-	mcErr := getStructFromMemcache(mc, "getIndex", &results)
-	if mcErr != nil {
-		err := db.Select(&results, "SELECT `id`, `user_id`, `body`, `mime`, `created_at` FROM `posts` ORDER BY `created_at` DESC")
-		if err != nil {
-			log.Print(err)
-			return
-		}
-		setStructToMemcache(mc, "getIndex", results)
-	}
-
-	posts, err := makePosts(results, getCSRFToken(r), false)
+	// Post table と User table をjoinしてdelflagが0のものだけを20件取得する
+	query := `
+SELECT p.id, p.user_id, p.body, p.mime, p.created_at,
+u.id AS "user.id", u.account_name AS "user.account_name",
+u.passhash AS "user.passhash", u.authority AS "user.authority",
+u.del_flg AS "user.del_flg", u.created_at AS "user.created_at"
+ FROM posts AS p JOIN users as u ON p.user_id = u.id
+ WHERE u.del_flg = 0 ORDER BY p.created_at DESC LIMIT ?
+`
+	err := db.Select(&posts, query, postsPerPage)
 	if err != nil {
 		log.Print(err)
 		return
 	}
+	csfrToken := getCSRFToken(r)
+
+	for _, p := range results {
+		err := db.Get(&p.CommentCount, "SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?", p.ID)
+		if err != nil {
+			log.Print(err)
+			return
+		}
+
+		query := "SELECT * FROM `comments` WHERE `post_id` = ? ORDER BY `created_at` DESC LIMIT 3"
+		var comments []Comment
+		err = db.Select(&comments, query, p.ID)
+		if err != nil {
+			log.Print(err)
+			return
+		}
+
+		for i := 0; i < len(comments); i++ {
+			err := db.Get(&comments[i].User, "SELECT * FROM `users` WHERE `id` = ?", comments[i].UserID)
+			if err != nil {
+				log.Print(err)
+				return
+			}
+		}
+
+		// reverse
+		for i, j := 0, len(comments)-1; i < j; i, j = i+1, j-1 {
+			comments[i], comments[j] = comments[j], comments[i]
+		}
+
+		p.Comments = comments
+		p.CSRFToken = csfrToken
+		posts = append(posts, p)
+	}
+
+	// err := db.Select(&results, "SELECT `id`, `user_id`, `body`, `mime`, `created_at` FROM `posts` ORDER BY `created_at` DESC")
+	// if err != nil {
+	// 	log.Print(err)
+	// 	return
+	// }
+
+	// posts, err := makePosts(results, getCSRFToken(r), false)
+	// if err != nil {
+	// 	log.Print(err)
+	// 	return
+	// }
 
 	fmap := template.FuncMap{
 		"imageURL": imageURL,
