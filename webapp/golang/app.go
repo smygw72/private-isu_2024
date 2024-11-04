@@ -670,11 +670,11 @@ u.del_flg AS "user.del_flg", u.created_at AS "user.created_at"
 	// 	return
 	// }
 
-	posts, err := makePosts(results, getCSRFToken(r), false)
-	if err != nil {
-		log.Print(err)
-		return
-	}
+	// posts, err := makePosts(results, getCSRFToken(r), false)
+	// if err != nil {
+	// 	log.Print(err)
+	// 	return
+	// }
 
 	if len(posts) == 0 {
 		w.WriteHeader(http.StatusNotFound)
