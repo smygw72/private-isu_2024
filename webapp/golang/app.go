@@ -224,27 +224,49 @@ func getFlash(w http.ResponseWriter, r *http.Request, key string) string {
 func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, error) {
 	var posts []Post
 
+	// 一度に取得するためのキーを作成
+	count_keys := make([]string, 0, len(results))
+	comment_keys := make([]string, 0, len(results))
+
 	for _, p := range results {
-		key := "Count.comment.post.id." + strconv.Itoa(p.ID)
-		mcErr := getStructFromMemcache(mc, key, &p.CommentCount)
-		if mcErr != nil {
+		count_keys = append(count_keys, "Count.comment.post.id."+strconv.Itoa(p.ID))
+		comment_key := "Comments.post.id." + strconv.Itoa(p.ID)
+		if !allComments {
+			comment_key += ".3"
+		}
+		comment_keys = append(comment_keys, comment_key)
+	}
+
+	countItems, err := mc.GetMulti(count_keys)
+	if err != nil {
+		return nil, err
+	}
+	commentItems, err := mc.GetMulti(comment_keys)
+	if err != nil {
+		return nil, err
+	}
+
+	for i, p := range results {
+		count_key := count_keys[i]
+		item, ok := countItems[count_key]
+		if !ok {
 			err := db.Get(&p.CommentCount, "SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?", p.ID)
 			if err != nil {
 				return nil, err
 			}
-			setStructToMemcache(mc, key, p.CommentCount)
+			setStructToMemcache(mc, count_key, p.CommentCount)
+		} else {
+			buffer := bytes.NewBuffer(item.Value)
+			decoder := gob.NewDecoder(buffer)
+			if err := decoder.Decode(&p.CommentCount); err != nil {
+				return nil, err
+			}
 		}
 
-		var comments []Comment
-
-		key = "Comments.post.id." + strconv.Itoa(p.ID)
-		if !allComments {
-			key += ".3"
-		}
-
-		mcErr = getStructFromMemcache(mc, key, &p.Comments)
-		if mcErr != nil {
-			// comment table と user table をjoinして memcacheへのN+1問い合わせを防ぐ
+		comment_key := comment_keys[i]
+		item, ok = commentItems[comment_key]
+		if !ok {
+			// comment table と user table をjoinして DBへの N+1 問い合わせを防ぐ
 			query := `
 SELECT c.id, c.post_id, c.user_id, c.comment, c.created_at,
 u.id AS "user.id", u.account_name AS "user.account_name", u.passhash AS "user.passhash",
@@ -252,42 +274,86 @@ u.authority AS "user.authority", u.del_flg AS "user.del_flg", u.created_at AS "u
  FROM comments AS c JOIN users as u ON c.user_id = u.id
  WHERE c.post_id = ? ORDER BY c.created_at DESC
 `
-
-			// query := "SELECT * FROM `comments` WHERE `post_id` = ? ORDER BY `created_at` DESC"
 			if !allComments {
 				query += " LIMIT 3"
 			}
+			var comments []Comment
 			err := db.Select(&comments, query, p.ID)
 			if err != nil {
 				return nil, err
 			}
-			setStructToMemcache(mc, key, comments)
+			// reverse
+			for i, j := 0, len(comments)-1; i < j; i, j = i+1, j-1 {
+				comments[i], comments[j] = comments[j], comments[i]
+			}
+			setStructToMemcache(mc, comment_key, comments)
+		} else {
+			buffer := bytes.NewBuffer(item.Value)
+			decoder := gob.NewDecoder(buffer)
+			if err := decoder.Decode(&p.Comments); err != nil {
+				return nil, err
+			}
 		}
 
-		// for i := 0; i < len(comments); i++ {
-		// 	key = "User.id." + strconv.Itoa(comments[i].UserID)
-		// 	mcErr = getStructFromMemcache(mc, key, &comments[i].User)
-		// 	if mcErr != nil {
-		// 		err := db.Get(&comments[i].User, "SELECT * FROM `users` WHERE `id` = ?", comments[i].UserID)
-		// 		if err != nil {
-		// 			return nil, err
-		// 		}
-		// 		setStructToMemcache(mc, key, comments[i].User)
-		// 	}
-		// }
-
-		// reverse
-		for i, j := 0, len(comments)-1; i < j; i, j = i+1, j-1 {
-			comments[i], comments[j] = comments[j], comments[i]
-		}
-
-		p.Comments = comments
 		p.CSRFToken = csrfToken
 		posts = append(posts, p)
 	}
 
 	return posts, nil
 }
+
+// 	for _, p := range results {
+// 		key := "Count.comment.post.id." + strconv.Itoa(p.ID)
+// 		mcErr := getStructFromMemcache(mc, key, &p.CommentCount)
+// 		if mcErr != nil {
+// 			err := db.Get(&p.CommentCount, "SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?", p.ID)
+// 			if err != nil {
+// 				return nil, err
+// 			}
+// 			setStructToMemcache(mc, key, p.CommentCount)
+// 		}
+
+// 		var comments []Comment
+
+// 		key = "Comments.post.id." + strconv.Itoa(p.ID)
+// 		if !allComments {
+// 			key += ".3"
+// 		}
+
+// 		mcErr = getStructFromMemcache(mc, key, &p.Comments)
+// 		if mcErr != nil {
+// 			// comment table と user table をjoinして memcacheへのN+1問い合わせを防ぐ
+// 			query := `
+// SELECT c.id, c.post_id, c.user_id, c.comment, c.created_at,
+// u.id AS "user.id", u.account_name AS "user.account_name", u.passhash AS "user.passhash",
+// u.authority AS "user.authority", u.del_flg AS "user.del_flg", u.created_at AS "user.created_at"
+//  FROM comments AS c JOIN users as u ON c.user_id = u.id
+//  WHERE c.post_id = ? ORDER BY c.created_at DESC
+// `
+
+// 			// query := "SELECT * FROM `comments` WHERE `post_id` = ? ORDER BY `created_at` DESC"
+// 			if !allComments {
+// 				query += " LIMIT 3"
+// 			}
+// 			err := db.Select(&comments, query, p.ID)
+// 			if err != nil {
+// 				return nil, err
+// 			}
+// 			setStructToMemcache(mc, key, comments)
+// 		}
+
+// 		// reverse
+// 		for i, j := 0, len(comments)-1; i < j; i, j = i+1, j-1 {
+// 			comments[i], comments[j] = comments[j], comments[i]
+// 		}
+
+// 		p.Comments = comments
+// 		p.CSRFToken = csrfToken
+// 		posts = append(posts, p)
+// 	}
+
+// 	return posts, nil
+// }
 
 func imageURL(p Post) string {
 	ext := ""
