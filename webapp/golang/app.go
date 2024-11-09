@@ -236,6 +236,7 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 		}
 
 		var comments []Comment
+
 		key = "Comments.post.id." + strconv.Itoa(p.ID)
 		if !allComments {
 			key += ".3"
@@ -243,7 +244,16 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 
 		mcErr = getStructFromMemcache(mc, key, &p.Comments)
 		if mcErr != nil {
-			query := "SELECT * FROM `comments` WHERE `post_id` = ? ORDER BY `created_at` DESC"
+			// comment table と user table をjoinして memcacheへのN+1問い合わせを防ぐ
+			query := `
+SELECT c.id, c.post_id, c.user_id, c.comment, c.created_at,
+u.id AS "user.id", u.account_name AS "user.account_name", u.passhash AS "user.passhash",
+u.authority AS "user.authority", u.del_flg AS "user.del_flg", u.created_at AS "user.created_at"
+ FROM comments AS c JOIN users as u ON c.user_id = u.id
+ WHERE c.post_id = ? ORDER BY c.created_at DESC
+`
+
+			// query := "SELECT * FROM `comments` WHERE `post_id` = ? ORDER BY `created_at` DESC"
 			if !allComments {
 				query += " LIMIT 3"
 			}
@@ -254,16 +264,16 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 			setStructToMemcache(mc, key, comments)
 		}
 
-		for i := 0; i < len(comments); i++ {
-			key = "User.id." + strconv.Itoa(comments[i].UserID)
-			mcErr = getStructFromMemcache(mc, key, &comments[i].User)
-			if mcErr != nil {
-				err := db.Get(&comments[i].User, "SELECT * FROM `users` WHERE `id` = ?", comments[i].UserID)
-				if err != nil {
-					return nil, err
-				}
-				setStructToMemcache(mc, key, comments[i].User)
-			}
+		// for i := 0; i < len(comments); i++ {
+		// 	key = "User.id." + strconv.Itoa(comments[i].UserID)
+		// 	mcErr = getStructFromMemcache(mc, key, &comments[i].User)
+		// 	if mcErr != nil {
+		// 		err := db.Get(&comments[i].User, "SELECT * FROM `users` WHERE `id` = ?", comments[i].UserID)
+		// 		if err != nil {
+		// 			return nil, err
+		// 		}
+		// 		setStructToMemcache(mc, key, comments[i].User)
+		// 	}
 		}
 
 		// reverse
