@@ -68,7 +68,7 @@ type Comment struct {
 	UserID    int       `db:"user_id"`
 	Comment   string    `db:"comment"`
 	CreatedAt time.Time `db:"created_at"`
-	User      User
+	User      User      `db:"user"`
 }
 
 // 構造体をMemcacheにセットする関数
@@ -158,9 +158,9 @@ func validateUser(accountName, password string) bool {
 // 今回のGo実装では言語側のエスケープの仕組みが使えないのでOSコマンドインジェクション対策できない
 // 取り急ぎPHPのescapeshellarg関数を参考に自前で実装
 // cf: http://jp2.php.net/manual/ja/function.escapeshellarg.php
-func escapeshellarg(arg string) string {
-	return "'" + strings.Replace(arg, "'", "'\\''", -1) + "'"
-}
+// func escapeshellarg(arg string) string {
+// 	return "'" + strings.Replace(arg, "'", "'\\''", -1) + "'"
+// }
 
 func digest(src string) string {
 	// opensslを使わないでsha512を計算する
@@ -243,7 +243,11 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 
 		mcErr = getStructFromMemcache(mc, key, &p.Comments)
 		if mcErr != nil {
-			err := db.Select(&comments, "SELECT * FROM `comments` WHERE `post_id` = ? ORDER BY `created_at` DESC", p.ID)
+			query := "SELECT * FROM `comments` WHERE `post_id` = ? ORDER BY `created_at` DESC"
+			if !allComments {
+				query += " LIMIT 3"
+			}
+			err := db.Select(&comments, query, p.ID)
 			if err != nil {
 				return nil, err
 			}
