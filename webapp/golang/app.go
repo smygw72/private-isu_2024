@@ -128,6 +128,7 @@ func dbInitialize() {
 		"ALTER TABLE `comments` ADD INDEX `post_id_index` (post_id)",
 		"ALTER TABLE `comments` ADD INDEX `user_id_index` (user_id)",
 		"ALTER TABLE `posts` ADD INDEX `idx_posts_created_at_desc` (`created_at` DESC)",
+		"ALTER TABLE `posts` ADD INDEX `idx_posts_user_id` (`user_id`)",
 	}
 
 	for _, sql := range sqls {
