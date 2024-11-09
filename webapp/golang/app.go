@@ -508,7 +508,8 @@ SELECT p.id, p.user_id, p.body, p.mime, p.created_at,
 u.id AS "user.id", u.account_name AS "user.account_name",
 u.passhash AS "user.passhash", u.authority AS "user.authority",
 u.del_flg AS "user.del_flg", u.created_at AS "user.created_at"
- FROM posts AS p JOIN users as u ON p.user_id = u.id
+ FROM posts AS p FORCE INDEX (idx_posts_created_at_desc)
+ JOIN users as u ON p.user_id = u.id
  WHERE u.del_flg = 0 ORDER BY p.created_at DESC LIMIT ?
 `
 	err = db.Select(&results, query, postsPerPage)
