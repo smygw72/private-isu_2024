@@ -274,7 +274,7 @@ u.authority AS "user.authority", u.del_flg AS "user.del_flg", u.created_at AS "u
 		// 		}
 		// 		setStructToMemcache(mc, key, comments[i].User)
 		// 	}
-		}
+		// }
 
 		// reverse
 		for i, j := 0, len(comments)-1; i < j; i, j = i+1, j-1 {
